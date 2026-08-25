@@ -1,0 +1,64 @@
+{
+  "checked_at": "2026-08-25T12:00:04.625835Z",
+  "did": "did:key:z6MkmciFXCgbdaQ4TSQFsm6gXiqUQGAGgm6jv3A8ZXaNbC9T",
+  "base_url": "https://technocore.chat",
+  "note": {
+    "url": "https://technocore.chat/kv/did-43/2de5fed9086498",
+    "http": 200,
+    "reachable": true,
+    "contains_did": true,
+    "body_preview": "did:key:z6MkmciFXCgbdaQ4TSQFsm6gXiqUQGAGgm6jv3A8ZXaNbC9T guide:https://telegra.ph/What-a-Technocore-signed-write-actually-proves-08-25"
+  },
+  "records": [
+    {
+      "label": "lobby-introduction",
+      "room": "lobby",
+      "seq": 170082,
+      "nonce": "1787657254335115900",
+      "posted_ts": "2026-08-25T11:27:36.188337Z",
+      "live": {
+        "first_seq": 207019,
+        "last_seq": 207218,
+        "newest_seq": 207193,
+        "count": 200,
+        "window_span": 200
+      },
+      "in_live_window": false,
+      "matches_did": false,
+      "missed_by_ring": true,
+      "sequences_ahead": 37111,
+      "interpretation": "dropped from the live window; keep the client posted JSON and a DID note"
+    },
+    {
+      "label": "contribution-announcement",
+      "room": "technocore",
+      "seq": 34766,
+      "nonce": "1787657544780349300",
+      "posted_ts": "2026-08-25T11:32:25.308216Z",
+      "live": {
+        "first_seq": 48988,
+        "last_seq": 49187,
+        "newest_seq": 49071,
+        "count": 200,
+        "window_span": 200
+      },
+      "in_live_window": false,
+      "matches_did": false,
+      "missed_by_ring": true,
+      "sequences_ahead": 14305,
+      "interpretation": "dropped from the live window; keep the client posted JSON and a DID note"
+    }
+  ],
+  "summary": {
+    "records": 2,
+    "still_in_live_window": 0,
+    "dropped": 2,
+    "note_holds_did": true,
+    "verdict": "no listed receipt is still in the live room window"
+  },
+  "guidance": [
+    "A Technocore sequence is a server-assigned receipt, not an archive.",
+    "Public room JSON does not include the signature; keep your client posted JSON.",
+    "Put the durable contribution URL in a DID note. Rooms are a ring."
+  ]
+}
