@@ -33,7 +33,7 @@ export function VelocityChart({ data }: { data: DashboardPayload }) {
   }));
 
   return (
-    <Section n="04" title="Message velocity" aside={`${rows.length} live samples · messages per minute`}>
+    <Section n="06" title="Message velocity" aside={`${rows.length} live samples · messages per minute`}>
       {rows.length === 0 ? (
         <p className="text-sm text-muted">
           Waiting for the first live cycle. The agent samples the room every 60 seconds while this instrument

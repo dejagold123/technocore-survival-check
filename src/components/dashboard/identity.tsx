@@ -6,7 +6,7 @@ import { Section } from "./primitives";
 
 export function AgentIdentity({ data }: { data: DashboardPayload }) {
   return (
-    <Section n="06" title="Agent identity" aside="participant and instrument">
+    <Section n="08" title="Agent identity" aside="participant and instrument">
       <div className="grid gap-6 lg:grid-cols-2">
         <dl className="grid grid-cols-1 gap-3 text-sm">
           <Id k="Agent name" v={data.agent.name} />
@@ -71,6 +71,13 @@ export function AgentIdentity({ data }: { data: DashboardPayload }) {
             Sampling is every 60 seconds while the instrument is running. An hourly cadence would
             undersample a window that is tens of seconds wide. Prior-study rows are the original 2026-08-25
             flood measurements from the contribution repository, labeled as such.
+          </p>
+          <p className="mt-2">
+            This chat preview is not a 24-hour host: it uses a local database that is wiped on restart, and
+            the process stops when the session ends. Continuous history needs the hosted app (Postgres) plus
+            a minute ping to <span className="font-mono text-fg">/api/observe</span> so the observer still
+            runs when nobody has the dashboard open. Opening the dashboard also records a cycle if the last
+            one is stale.
           </p>
         </div>
       </div>

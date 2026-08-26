@@ -1,4 +1,5 @@
-import { getSql } from "@/lib/db";
+import { createHash } from "node:crypto";
+import { dbSource, getSql } from "@/lib/db";
 import {
   AGENT,
   MAX_WINDOW_LIMIT,
@@ -9,11 +10,14 @@ import {
   SPIKE_RATIO,
   STALE_MS,
 } from "./constants";
+import { classifyNote, classifyReceiptDeath } from "./death";
 import type {
   DashboardPayload,
+  DeathMode,
   ObservationRow,
   ReceiptCheckRow,
   ReceiptRow,
+  ServiceContract,
   VelocityPoint,
   VisibilityStatus,
 } from "./types";
@@ -39,7 +43,25 @@ type NoteProbe = {
   reachable: boolean;
   contains_did: boolean;
   preview: string | null;
+  sha256: string | null;
 };
+
+type FetchResult = {
+  status: number;
+  body: string;
+  bytes: number;
+  budgetRemaining: number | null;
+};
+
+type MissProbe = {
+  since: number;
+  firstSeq: number | null;
+  lastSeq: number | null;
+  skipped: boolean;
+  readableDepth: number | null;
+};
+
+type RoomRead = RoomPayload & { bytes: number; http429: boolean; budgetRemaining: number | null };
 
 function iso(v: unknown): string | null {
   if (v == null) return null;
@@ -64,7 +86,7 @@ function bool(v: unknown): boolean | null {
   return Boolean(v);
 }
 
-async function fetchBytes(url: string, timeoutMs = 18_000): Promise<{ status: number; body: string }> {
+async function fetchBytes(url: string, timeoutMs = 18_000): Promise<FetchResult> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -77,13 +99,29 @@ async function fetchBytes(url: string, timeoutMs = 18_000): Promise<{ status: nu
       signal: controller.signal,
     });
     const body = await res.text();
-    return { status: res.status, body };
+    return {
+      status: res.status,
+      body,
+      bytes: Buffer.byteLength(body, "utf8"),
+      budgetRemaining: parseBudget(body),
+    };
   } finally {
     clearTimeout(t);
   }
 }
 
-async function fetchWithRetry(url: string): Promise<{ status: number; body: string }> {
+function parseBudget(body: string): number | null {
+  const m = body.match(/# budget:\s*(\d+)\s+of\s+\d+/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+async function fetchWithRetry(url: string): Promise<FetchResult> {
   try {
     const first = await fetchBytes(url);
     if (first.status >= 500 || first.status === 429) {
@@ -97,9 +135,9 @@ async function fetchWithRetry(url: string): Promise<{ status: number; body: stri
   }
 }
 
-async function readRoom(room: string, limit = MAX_WINDOW_LIMIT): Promise<RoomPayload> {
+async function readRoom(room: string, limit = MAX_WINDOW_LIMIT): Promise<RoomRead> {
   const url = `${AGENT.baseUrl}/r/${encodeURIComponent(room)}?format=json&limit=${limit}`;
-  const { status, body } = await fetchWithRetry(url);
+  const { status, body, bytes, budgetRemaining } = await fetchWithRetry(url);
   if (status !== 200) {
     throw new Error(`GET /r/${room} returned HTTP ${status}`);
   }
@@ -120,6 +158,70 @@ async function readRoom(room: string, limit = MAX_WINDOW_LIMIT): Promise<RoomPay
     first_seq: num(p.first_seq) ?? 0,
     last_seq: num(p.last_seq) ?? 0,
     messages: messages.filter((m) => m && typeof m === "object") as RoomPayload["messages"],
+    bytes,
+    http429: false,
+    budgetRemaining,
+  };
+}
+
+async function probeMiss(room: string, lastSeq: number): Promise<MissProbe> {
+  const since = Math.max(0, lastSeq - 500);
+  const url = `${AGENT.baseUrl}/r/${encodeURIComponent(room)}?format=json&since=${since}&limit=5`;
+  try {
+    const { status, body } = await fetchWithRetry(url);
+    if (status !== 200) {
+      return { since, firstSeq: null, lastSeq: null, skipped: false, readableDepth: null };
+    }
+    const payload = JSON.parse(body) as { first_seq?: unknown; last_seq?: unknown };
+    const firstSeq = num(payload.first_seq);
+    const head = num(payload.last_seq);
+    const skipped = firstSeq != null && firstSeq > since + 1;
+    const readableDepth = firstSeq != null && head != null ? head - firstSeq + 1 : null;
+    return { since, firstSeq, lastSeq: head, skipped, readableDepth };
+  } catch {
+    return { since, firstSeq: null, lastSeq: null, skipped: false, readableDepth: null };
+  }
+}
+
+async function probeContract(): Promise<ServiceContract> {
+  try {
+    const { status, body } = await fetchWithRetry(`${AGENT.baseUrl}/.well-known/agent.json`);
+    if (status !== 200) {
+      return emptyContract(false);
+    }
+    const json = JSON.parse(body) as {
+      version?: unknown;
+      limits?: Record<string, unknown>;
+      trust?: { durable?: unknown };
+    };
+    const limits = json.limits ?? {};
+    return {
+      ringBytes: num(limits.room_ring_bytes),
+      totalRoomBytes: num(limits.room_bytes_total),
+      retentionSeconds: num(limits.retention_seconds),
+      ephemeralTtlSeconds: num(limits.ephemeral_ttl_seconds),
+      readsPerMinute: num(limits.reads_per_minute_per_ip),
+      writesPerMinute: num(limits.writes_per_minute_per_ip),
+      version: json.version == null ? null : String(json.version),
+      durableClaim: typeof json.trust?.durable === "boolean" ? json.trust.durable : null,
+      ok: true,
+    };
+  } catch {
+    return emptyContract(false);
+  }
+}
+
+function emptyContract(ok: boolean): ServiceContract {
+  return {
+    ringBytes: null,
+    totalRoomBytes: null,
+    retentionSeconds: null,
+    ephemeralTtlSeconds: null,
+    readsPerMinute: null,
+    writesPerMinute: null,
+    version: null,
+    durableClaim: null,
+    ok,
   };
 }
 
@@ -136,6 +238,7 @@ async function probeNote(): Promise<NoteProbe> {
       reachable: status === 200,
       contains_did: body.includes(AGENT.did),
       preview: visible.slice(0, 500) || null,
+      sha256: status === 200 ? sha256(visible) : null,
     };
   } catch (err) {
     return {
@@ -143,6 +246,7 @@ async function probeNote(): Promise<NoteProbe> {
       reachable: false,
       contains_did: false,
       preview: err instanceof Error ? err.message : "note probe failed",
+      sha256: null,
     };
   }
 }
@@ -205,20 +309,40 @@ function conclude(args: {
   didOk: boolean;
   probeOk: boolean;
   error?: string | null;
+  missSkipped?: boolean | null;
+  advertisedRingBytes?: number | null;
+  observedWindowBytes?: number | null;
+  advertisedRetention?: number | null;
+  noteMode?: DeathMode | string | null;
 }): string {
   if (!args.probeOk) {
     return `Probe failed (${args.error ?? "unreachable"}). No new measurement of the live window was recorded. Existing receipts remain evidence that a write occurred; they are not an archive of room history.`;
   }
-  const did = args.didOk
-    ? "A durable DID identity record is still reachable independently of the rolling room."
-    : "The DID note was not reachable or no longer contains this agent's DID.";
+  const did =
+    args.noteMode === "note_overwrite"
+      ? "The DID note is reachable but no longer contains this agent's DID — a world-writable cache, not a registrar."
+      : args.noteMode === "note_drift"
+        ? "The DID note still contains the DID, but its body hash changed. Treat the note as a cache."
+        : args.noteMode === "note_missing"
+          ? "The DID note was not reachable."
+          : args.didOk
+            ? "A durable DID identity record is still reachable independently of the rolling room."
+            : "The DID note was not reachable or no longer contains this agent's DID.";
+  const miss =
+    args.missSkipped === true
+      ? " A since=head-500 miss probe confirms first_seq jumped: the readable ring is the newest slice, not the advertised 10 MiB."
+      : "";
+  const contract =
+    args.advertisedRetention != null && args.windowSeconds != null
+      ? ` Advertised idle retention is ${formatWin(args.advertisedRetention)}; the live window currently holds about ${formatWin(args.windowSeconds)}.`
+      : "";
   if (args.status === "observable") {
-    return `Sequence ${args.primarySeq} is still inside the live room window, ${formatAhead(args.sequencesAhead)} behind the current head. At the present rate the window holds about ${formatWin(args.windowSeconds)} of history. ${did}`;
+    return `Sequence ${args.primarySeq} is still inside the live room window, ${formatAhead(args.sequencesAhead)} behind the current head. At the present rate the window holds about ${formatWin(args.windowSeconds)} of history.${contract}${miss} ${did}`;
   }
   if (args.status === "near_edge") {
-    return `Sequence ${args.primarySeq} is approaching the trailing edge of the live window (${formatAhead(args.sequencesAhead)} behind the head). It is still observable, but the ring is about to drop it. ${did}`;
+    return `Sequence ${args.primarySeq} is approaching the trailing edge of the live window (${formatAhead(args.sequencesAhead)} behind the head). It is still observable, but the ring is about to drop it.${miss} ${did}`;
   }
-  return `Sequence ${args.primarySeq} persists as a signed receipt of participation, but is no longer inside the observable room window (${formatAhead(args.sequencesAhead)} behind the head). The live window currently holds about ${formatWin(args.windowSeconds)} of history. ${did}`;
+  return `Sequence ${args.primarySeq} persists as a signed receipt of participation, but is no longer inside the observable room window (${formatAhead(args.sequencesAhead)} behind the head). The live window currently holds about ${formatWin(args.windowSeconds)} of history.${contract}${miss} ${did}`;
 }
 
 function formatAhead(n: number | null): string {
@@ -239,11 +363,12 @@ async function ensureSeeded(sql: Sql): Promise<void> {
     await sql`
       insert into tracked_receipts (
         label, room, seq, nonce, posted_at, text_preview, did, source, has_client_receipt,
-        last_visible_at, first_missing_at, last_status
+        last_visible_at, first_missing_at, last_status, death_mode, death_mode_detail
       ) values (
         ${r.label}, ${r.room}, ${r.seq}, ${r.nonce}, ${r.posted_at}, ${r.text_preview},
         ${AGENT.did}, ${r.source}, ${r.has_client_receipt},
-        ${r.last_visible_at}, ${r.first_missing_at}, ${r.first_missing_at ? "gone" : "recorded"}
+        ${r.last_visible_at}, ${r.first_missing_at}, ${r.first_missing_at ? "gone" : "recorded"},
+        ${r.death_mode}, ${r.death_mode === "ring_overflow" ? "first_seq jumped past this sequence during the 2026-08-25 flood." : null}
       )
       on conflict (room, seq) do update set
         last_visible_at = coalesce(tracked_receipts.last_visible_at, excluded.last_visible_at),
@@ -251,7 +376,9 @@ async function ensureSeeded(sql: Sql): Promise<void> {
           when excluded.first_missing_at is null then tracked_receipts.first_missing_at
           when tracked_receipts.first_missing_at is null then excluded.first_missing_at
           else least(tracked_receipts.first_missing_at, excluded.first_missing_at)
-        end
+        end,
+        death_mode = coalesce(tracked_receipts.death_mode, excluded.death_mode),
+        death_mode_detail = coalesce(tracked_receipts.death_mode_detail, excluded.death_mode_detail)
     `;
   }
 
@@ -382,6 +509,22 @@ function mapObservation(r: Record<string, unknown>): ObservationRow {
     probe_ok: bool(r.probe_ok) ?? true,
     error_message: r.error_message == null ? null : String(r.error_message),
     source: String(r.source ?? "agent"),
+    advertised_ring_bytes: num(r.advertised_ring_bytes),
+    advertised_total_room_bytes: num(r.advertised_total_room_bytes),
+    advertised_retention_seconds: num(r.advertised_retention_seconds),
+    advertised_ephemeral_ttl_seconds: num(r.advertised_ephemeral_ttl_seconds),
+    advertised_reads_per_minute: num(r.advertised_reads_per_minute),
+    advertised_writes_per_minute: num(r.advertised_writes_per_minute),
+    observed_window_bytes: num(r.observed_window_bytes),
+    miss_since: num(r.miss_since),
+    miss_first_seq: num(r.miss_first_seq),
+    miss_skipped: bool(r.miss_skipped),
+    readable_depth: num(r.readable_depth),
+    rate_remaining: num(r.rate_remaining),
+    http_429: bool(r.http_429),
+    did_note_sha256: r.did_note_sha256 == null ? null : String(r.did_note_sha256),
+    did_note_mode: r.did_note_mode == null ? null : String(r.did_note_mode),
+    contract_ok: bool(r.contract_ok),
   };
 }
 
@@ -413,6 +556,8 @@ function mapReceipt(r: Record<string, unknown>): ReceiptRow {
     last_checked_at: iso(r.last_checked_at),
     survival_seconds: survival,
     in_live_window: bool(r.in_live_window),
+    death_mode: r.death_mode == null ? null : String(r.death_mode),
+    death_mode_detail: r.death_mode_detail == null ? null : String(r.death_mode_detail),
   };
 }
 
@@ -433,6 +578,8 @@ function mapCheck(r: Record<string, unknown>): ReceiptCheckRow {
     matches_did: bool(r.matches_did),
     survival_seconds: num(r.survival_seconds),
     observed_at: iso(r.observed_at) ?? undefined,
+    death_mode: r.death_mode == null ? null : String(r.death_mode),
+    death_mode_detail: r.death_mode_detail == null ? null : String(r.death_mode_detail),
   };
 }
 
@@ -505,7 +652,7 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
     select * from tracked_receipts order by seq desc
   `;
   const rooms = [...new Set(receipts.map((r) => String(r.room)))];
-  const roomData = new Map<string, RoomPayload | { error: string }>();
+  const roomData = new Map<string, RoomRead | { error: string }>();
 
   await Promise.all(
     rooms.map(async (room) => {
@@ -517,13 +664,14 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
     }),
   );
 
-  const note = await probeNote();
+  const [note, contract] = await Promise.all([probeNote(), probeContract()]);
   const primary = roomData.get(AGENT.primaryRoom);
   const probeOk = primary != null && !("error" in primary);
   const errorMessage =
     primary && "error" in primary ? primary.error : probeOk ? null : "primary room unread";
 
-  const live = probeOk ? (primary as RoomPayload) : null;
+  const live = probeOk ? (primary as RoomRead) : null;
+  const miss = live ? await probeMiss(AGENT.primaryRoom, live.last_seq) : null;
   const currentSeq = live?.last_seq ?? null;
   const previousSeq = previous?.current_seq ?? null;
   const intervalSeconds =
@@ -539,6 +687,14 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
   const winVel = live ? windowVelocity(live) : null;
   const span = live ? live.last_seq - live.first_seq + 1 : null;
   const winSec = windowSeconds(span, winVel ?? intervalVel);
+  const http429 = live?.http429 ?? false;
+  const rateRemaining = live?.budgetRemaining ?? null;
+  const noteMode = classifyNote({
+    reachable: note.reachable,
+    containsDid: note.contains_did,
+    sha256: note.sha256,
+    previousSha256: previous?.did_note_sha256 ?? null,
+  });
 
   const recent = await sql<Record<string, unknown>>`
     select velocity_per_minute, window_velocity_per_min, window_span
@@ -578,6 +734,11 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
     didOk: note.reachable && note.contains_did,
     probeOk,
     error: errorMessage,
+    missSkipped: miss?.skipped ?? null,
+    advertisedRingBytes: contract.ringBytes,
+    observedWindowBytes: live?.bytes ?? null,
+    advertisedRetention: contract.retentionSeconds,
+    noteMode,
   });
 
   const inserted = await sql<{ id: number }>`
@@ -585,13 +746,22 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
       observed_at, room, current_seq, previous_seq, sequence_growth, interval_seconds,
       velocity_per_minute, window_velocity_per_min, window_first_seq, window_last_seq,
       window_count, window_span, window_seconds, did_note_reachable, did_note_contains_did,
-      did_note_http, anomaly, conclusion, probe_ok, error_message, source, cycle_key
+      did_note_http, anomaly, conclusion, probe_ok, error_message, source, cycle_key,
+      advertised_ring_bytes, advertised_total_room_bytes, advertised_retention_seconds,
+      advertised_ephemeral_ttl_seconds, advertised_reads_per_minute, advertised_writes_per_minute,
+      observed_window_bytes, miss_since, miss_first_seq, miss_skipped, readable_depth,
+      rate_remaining, http_429, did_note_sha256, did_note_mode, contract_ok
     ) values (
       ${observedAt}, ${AGENT.primaryRoom}, ${currentSeq}, ${previousSeq}, ${sequenceGrowth},
       ${intervalSeconds}, ${intervalVel}, ${winVel}, ${live?.first_seq ?? null},
       ${live?.last_seq ?? null}, ${live?.count ?? null}, ${span}, ${winSec},
       ${note.reachable}, ${note.contains_did}, ${note.http}, ${anomaly}, ${conclusion},
-      ${probeOk}, ${errorMessage}, 'agent', ${observedAt}
+      ${probeOk}, ${errorMessage}, 'agent', ${observedAt},
+      ${contract.ringBytes}, ${contract.totalRoomBytes}, ${contract.retentionSeconds},
+      ${contract.ephemeralTtlSeconds}, ${contract.readsPerMinute}, ${contract.writesPerMinute},
+      ${live?.bytes ?? null}, ${miss?.since ?? null}, ${miss?.firstSeq ?? null},
+      ${miss?.skipped ?? null}, ${miss?.readableDepth ?? span},
+      ${rateRemaining}, ${http429}, ${note.sha256}, ${noteMode}, ${contract.ok}
     )
     returning id
   `;
@@ -603,6 +773,7 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
     const seq = num(rec.seq) ?? 0;
     const snapshot = roomData.get(room);
     const liveRoom = snapshot && !("error" in snapshot) ? snapshot : null;
+    const roomErr = snapshot && "error" in snapshot ? snapshot.error : null;
     const found = liveRoom?.messages.find((m) => m.seq === seq) ?? null;
     const first = liveRoom?.first_seq ?? null;
     const last = liveRoom?.last_seq ?? null;
@@ -616,6 +787,19 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
     const matchesDid = found
       ? found.from === AGENT.did && (!nonce || String(found.nonce ?? "") === nonce)
       : null;
+
+    const classified = classifyReceiptDeath({
+      status,
+      inWindow,
+      missedByRing: missed,
+      room,
+      roomHttpError: roomErr,
+      postedAt: iso(rec.posted_at),
+      observedAt,
+      ephemeralTtlSeconds: contract.ephemeralTtlSeconds,
+    });
+    const deathMode: DeathMode = classified.mode;
+    const deathDetail = classified.detail;
 
     let survival: number | null = null;
     const posted = iso(rec.posted_at);
@@ -636,10 +820,11 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
       insert into receipt_checks (
         observation_id, receipt_id, room, seq, in_live_window, missed_by_ring,
         sequences_ahead, window_first_seq, window_last_seq, window_span,
-        visibility_status, matches_did, survival_seconds
+        visibility_status, matches_did, survival_seconds, death_mode, death_mode_detail
       ) values (
         ${observationId}, ${num(rec.id)}, ${room}, ${seq}, ${inWindow}, ${missed},
-        ${ahead}, ${first}, ${last}, ${rSpan}, ${status}, ${matchesDid}, ${survival}
+        ${ahead}, ${first}, ${last}, ${rSpan}, ${status}, ${matchesDid}, ${survival},
+        ${deathMode}, ${deathDetail}
       )
     `;
 
@@ -649,7 +834,9 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
         last_visible_at = ${lastVisible},
         first_missing_at = ${firstMissing},
         last_sequences_ahead = ${ahead},
-        last_checked_at = ${observedAt}
+        last_checked_at = ${observedAt},
+        death_mode = ${deathMode},
+        death_mode_detail = ${deathDetail}
       where id = ${num(rec.id)}
     `;
   }
@@ -751,12 +938,14 @@ async function assemble(sql: Sql, q: string): Promise<DashboardPayload> {
   }
 
   const noteRow = await sql<Record<string, unknown>>`
-    select conclusion from observations
-    where source = 'agent' and did_note_contains_did is not null
+    select did_note_sha256, did_note_mode from observations
+    where source = 'agent' and did_note_sha256 is not null
     order by observed_at desc
     limit 1
   `;
-  void noteRow;
+  const didNotePreview = noteRow[0]?.did_note_sha256
+    ? `sha256 ${String(noteRow[0].did_note_sha256).slice(0, 16)}… · ${String(noteRow[0].did_note_mode ?? "")}`
+    : null;
 
   const lastAgent = observations.find((o) => o.source === "agent" && o.room === AGENT.primaryRoom);
   const lastAt = lastAgent?.observed_at ?? latest?.observed_at ?? null;
@@ -788,7 +977,24 @@ async function assemble(sql: Sql, q: string): Promise<DashboardPayload> {
     observations,
     velocity,
     checksByReceipt,
-    didNotePreview: null,
+    didNotePreview,
     generatedAt: new Date().toISOString(),
+    persistence: dbSource,
+    observePath: "/api/observe",
+  };
+}
+
+export async function runScheduledCycle(): Promise<{
+  ok: boolean;
+  observedAt: string | null;
+  currentSeq: number | null;
+  persistence: "neon" | "pglite";
+}> {
+  const payload = await loadDashboardState({ force: true });
+  return {
+    ok: payload.latest?.probe_ok ?? false,
+    observedAt: payload.latest?.observed_at ?? null,
+    currentSeq: payload.latest?.current_seq ?? null,
+    persistence: payload.persistence,
   };
 }

@@ -19,7 +19,7 @@ export function HistoryTable({
 
   return (
     <Section
-      n="05"
+      n="07"
       title="Historical observations"
       aside={`${data.observations.length} shown`}
     >

@@ -1,5 +1,19 @@
 export type VisibilityStatus = "recorded" | "observable" | "near_edge" | "gone";
 
+export type DeathMode =
+  | "recorded"
+  | "still_visible"
+  | "near_edge"
+  | "ring_overflow"
+  | "ephemeral_ttl"
+  | "idle_deleted"
+  | "single_message_room"
+  | "note_overwrite"
+  | "note_drift"
+  | "note_missing"
+  | "note_ok"
+  | "unknown_gone";
+
 export type ReceiptRow = {
   id: number;
   label: string;
@@ -18,6 +32,8 @@ export type ReceiptRow = {
   last_checked_at: string | null;
   survival_seconds: number | null;
   in_live_window: boolean | null;
+  death_mode: DeathMode | string | null;
+  death_mode_detail: string | null;
 };
 
 export type ObservationRow = {
@@ -43,6 +59,22 @@ export type ObservationRow = {
   probe_ok: boolean;
   error_message: string | null;
   source: string;
+  advertised_ring_bytes: number | null;
+  advertised_total_room_bytes: number | null;
+  advertised_retention_seconds: number | null;
+  advertised_ephemeral_ttl_seconds: number | null;
+  advertised_reads_per_minute: number | null;
+  advertised_writes_per_minute: number | null;
+  observed_window_bytes: number | null;
+  miss_since: number | null;
+  miss_first_seq: number | null;
+  miss_skipped: boolean | null;
+  readable_depth: number | null;
+  rate_remaining: number | null;
+  http_429: boolean | null;
+  did_note_sha256: string | null;
+  did_note_mode: DeathMode | string | null;
+  contract_ok: boolean | null;
 };
 
 export type ReceiptCheckRow = {
@@ -61,6 +93,8 @@ export type ReceiptCheckRow = {
   matches_did: boolean | null;
   survival_seconds: number | null;
   observed_at?: string;
+  death_mode: DeathMode | string | null;
+  death_mode_detail: string | null;
 };
 
 export type VelocityPoint = {
@@ -73,6 +107,18 @@ export type VelocityPoint = {
   window_seconds: number | null;
   anomaly: string | null;
   probe_ok: boolean;
+};
+
+export type ServiceContract = {
+  ringBytes: number | null;
+  totalRoomBytes: number | null;
+  retentionSeconds: number | null;
+  ephemeralTtlSeconds: number | null;
+  readsPerMinute: number | null;
+  writesPerMinute: number | null;
+  version: string | null;
+  durableClaim: boolean | null;
+  ok: boolean;
 };
 
 export type DashboardPayload = {
@@ -97,4 +143,6 @@ export type DashboardPayload = {
   checksByReceipt: Record<number, ReceiptCheckRow[]>;
   didNotePreview: string | null;
   generatedAt: string;
+  persistence: "neon" | "pglite";
+  observePath: string;
 };

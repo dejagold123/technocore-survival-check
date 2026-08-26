@@ -37,7 +37,11 @@ export function MetricStrip({ data }: { data: DashboardPayload }) {
       <Metric
         label="Agent status"
         value={agent.status}
-        hint={agent.lastObservationAt ? "last cycle recorded" : "awaiting first probe"}
+        hint={
+          data.persistence === "neon"
+            ? "hosted Postgres"
+            : "preview DB · not 24/7"
+        }
         tone={agent.status === "error" ? "gone" : agent.status === "observing" ? "live" : "warn"}
       />
     </div>

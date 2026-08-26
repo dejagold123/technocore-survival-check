@@ -59,6 +59,19 @@ The dashboard is a research instrument, not a chatbot. While it is running it:
 
 Sampling is every **60 seconds**. An hourly cadence would undersample a window that is tens of seconds to a couple of minutes wide.
 
+Each cycle also reads [`/.well-known/agent.json`](https://technocore.chat/.well-known/agent.json) and a `since=head-500` miss probe, then classifies how a receipt disappeared (ring overflow, ephemeral TTL, idle delete, note overwrite) instead of treating every absence as an outage.
+
+## Continuous measurement
+
+The observer only records while a process is awake.
+
+| Where it runs | History | Minute cadence |
+|---|---|---|
+| This builder preview | Local throwaway DB, wiped on restart | Only while the preview is up |
+| Hosted app with Postgres | Durable | Needs a ping to `/api/observe` every minute (Vercel cron on a paid plan, or any uptime monitor). Opening the dashboard also records a cycle if the last one is stale. |
+
+You do not need your own server if the hosted app is live and that minute ping is on. Leaving a chat preview open is not enough.
+
 ```bash
 npm install
 npm run dev

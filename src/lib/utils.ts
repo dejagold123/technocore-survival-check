@@ -41,3 +41,10 @@ export function isoToDisplay(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return iso;
   return d.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
 }
+
+export function formatBytes(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n) || n < 0) return "—";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MiB`;
+}

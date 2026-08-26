@@ -29,6 +29,7 @@ export type SeedReceipt = {
   has_client_receipt: boolean;
   last_visible_at: string | null;
   first_missing_at: string | null;
+  death_mode: "ring_overflow" | null;
 };
 
 export const SEED_RECEIPTS: SeedReceipt[] = [
@@ -43,6 +44,7 @@ export const SEED_RECEIPTS: SeedReceipt[] = [
     has_client_receipt: false,
     last_visible_at: null,
     first_missing_at: null,
+    death_mode: null,
   },
   {
     label: "contribution-announcement",
@@ -56,6 +58,7 @@ export const SEED_RECEIPTS: SeedReceipt[] = [
     has_client_receipt: true,
     last_visible_at: "2026-08-25T11:32:25.308216Z",
     first_missing_at: "2026-08-25T11:32:51Z",
+    death_mode: "ring_overflow",
   },
   {
     label: "lobby-introduction",
@@ -69,5 +72,6 @@ export const SEED_RECEIPTS: SeedReceipt[] = [
     has_client_receipt: true,
     last_visible_at: "2026-08-25T11:27:36.188337Z",
     first_missing_at: "2026-08-25T11:27:46Z",
+    death_mode: "ring_overflow",
   },
 ];

@@ -8,7 +8,9 @@ import { isoToDisplay } from "@/lib/utils";
 import { StatusDot } from "./primitives";
 import { MetricStrip } from "./metrics";
 import { LiveObservation } from "./live-panel";
+import { ContractPanel } from "./contract";
 import { ReceiptTracker } from "./receipts";
+import { DeathTaxonomy } from "./deaths";
 import { SurvivalTimeline } from "./timeline";
 import { VelocityChart } from "./velocity";
 import { HistoryTable } from "./history";
@@ -89,7 +91,9 @@ export function DashboardApp({ initial }: { initial?: DashboardPayload }) {
           <>
             <MetricStrip data={data} />
             <LiveObservation data={data} />
+            <ContractPanel data={data} />
             <ReceiptTracker data={data} />
+            <DeathTaxonomy data={data} />
             <SurvivalTimeline data={data} />
             <VelocityChart data={data} />
             <HistoryTable data={data} onSearch={onSearch} />

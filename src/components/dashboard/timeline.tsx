@@ -14,7 +14,7 @@ export function SurvivalTimeline({ data }: { data: DashboardPayload }) {
     `${((Math.max(b - a, 0) / range) * 100).toFixed(3)}%`;
 
   return (
-    <Section n="03" title="Survival timeline" aside="when receipts entered and left the observable window">
+    <Section n="05" title="Survival timeline" aside="when receipts entered and left the observable window">
       <div className="flex flex-col gap-4">
         {data.receipts.map((r) => {
           const posted = r.posted_at ? Date.parse(r.posted_at) : null;

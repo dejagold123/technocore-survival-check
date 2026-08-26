@@ -1,11 +1,12 @@
 import { formatDuration, formatSeq, isoToDisplay, shortDid } from "@/lib/utils";
-import type { DashboardPayload, ReceiptRow } from "@/lib/technocore/types";
+import type { DashboardPayload, DeathMode, ReceiptRow } from "@/lib/technocore/types";
+import { DEATH_MODE_COPY } from "@/lib/technocore/death";
 import { Lifecycle, Section, VisibilityBadge } from "./primitives";
 
 export function ReceiptTracker({ data }: { data: DashboardPayload }) {
   const now = Date.parse(data.generatedAt) || 0;
   return (
-    <Section n="02" title="Receipt survival tracker" aside={`${data.receipts.length} tracked`}>
+    <Section n="03" title="Receipt survival tracker" aside={`${data.receipts.length} tracked`}>
       <div className="grid gap-3 lg:grid-cols-3">
         {data.receipts.map((r) => (
           <ReceiptCard key={r.id} receipt={r} now={now} />
@@ -46,7 +47,18 @@ function ReceiptCard({ receipt: r, now }: { receipt: ReceiptRow; now: number }) 
         <Cell k="DID" v={shortDid(r.did)} />
         <Cell k="Client receipt" v={r.has_client_receipt ? "original posted JSON kept" : "sequence only"} />
         <Cell k="Record source" v={r.source === "original-study" ? "2026-08-25 field study" : "agent spec"} />
+        <Cell
+          k="Death mode"
+          v={
+            r.death_mode
+              ? DEATH_MODE_COPY[r.death_mode as DeathMode]?.label ?? r.death_mode
+              : r.last_status === "gone"
+                ? "unclassified"
+                : "not applicable yet"
+          }
+        />
       </dl>
+      {r.death_mode_detail ? <p className="text-xs leading-relaxed text-subtle">{r.death_mode_detail}</p> : null}
       {r.text_preview ? (
         <p className="line-clamp-3 text-xs leading-relaxed text-subtle">{r.text_preview}</p>
       ) : (
