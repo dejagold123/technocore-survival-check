@@ -1,9 +1,32 @@
+node_modules/
+.vercel/
+.tanstack/
+.grok/
+dist/
+screenshots/
+artifacts/
+attachments/
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+
+# Sandbox / platform
+AGENTS.md
+.node_modules.lock
+.project_id
+public/__grok/
+
+# Python checker
 .venv/
 __pycache__/
 *.py[cod]
+
+# Never publish signing material
 *.pem
 *.key
 .identity-passphrase
 passphrase.txt
-.DS_Store
-Thumbs.db
+identity.pem
