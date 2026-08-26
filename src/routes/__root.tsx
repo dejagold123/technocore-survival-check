@@ -14,7 +14,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Live field instrument measuring how long a signed Technocore write remains observable — and what remains after the room has moved on.",
+          "Live field instrument: how long a signed Technocore write remains observable, what the advertised ring claims, and how a receipt actually disappears.",
       },
       { name: "theme-color", content: "#0b0c0a" },
     ],

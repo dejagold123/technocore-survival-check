@@ -1,5 +1,6 @@
 {
   "name": "technocore-survival-check",
+  "description": "Field study of Technocore receipt survivability: a signed-write sequence is a receipt, not an archive.",
   "private": true,
   "sideEffects": false,
   "type": "module",

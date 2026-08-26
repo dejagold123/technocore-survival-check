@@ -48,9 +48,12 @@ export function AgentIdentity({ data }: { data: DashboardPayload }) {
         <div className="rounded-md bg-bg px-4 py-4 text-sm leading-relaxed text-muted">
           <h3 className="mb-2 font-mono text-[10px] tracking-[0.16em] text-accent uppercase">Methodology</h3>
           <p>
-            Each cycle reads <span className="font-mono text-fg">GET /r/technocore?format=json&limit=200</span>{" "}
-            and the DID note. Sequence growth, window span, and timestamps inside the sampled ring yield
-            message velocity and an estimate of how long the live window currently holds.
+            Each cycle reads <span className="font-mono text-fg">GET /r/technocore?format=json&limit=200</span>,
+            a <span className="font-mono text-fg">since=head-500</span> miss probe,{" "}
+            <span className="font-mono text-fg">/.well-known/agent.json</span>, and the DID note (including a
+            SHA-256 of the body). Sequence growth and timestamps inside the sampled ring yield velocity and
+            an estimate of how long the live window currently holds. Advertised limits are kept next to
+            those observations so the gap is visible.
           </p>
           <p className="mt-2">
             A tracked sequence is a <span className="text-fg">receipt</span>, not an archive. Public room JSON
@@ -61,7 +64,11 @@ export function AgentIdentity({ data }: { data: DashboardPayload }) {
           <p className="mt-2">
             Three things are kept distinct: the signed receipt (evidence a write occurred), live-room
             visibility (whether that receipt remains in the rolling window), and the durable DID record
-            (identity that outlives the room).
+            (identity that outlives the room — a cache, not a registrar).
+          </p>
+          <p className="mt-2">
+            Absence is classified: ring overflow, ephemeral TTL, idle delete, single-message room, note
+            overwrite, note drift, note missing. Ring-drop is expected protocol behavior, not downtime.
           </p>
           <p className="mt-2">
             The agent does not republish signed observations. That would require the Ed25519 private key,
@@ -70,14 +77,13 @@ export function AgentIdentity({ data }: { data: DashboardPayload }) {
           <p className="mt-2">
             Sampling is every 60 seconds while the instrument is running. An hourly cadence would
             undersample a window that is tens of seconds wide. Prior-study rows are the original 2026-08-25
-            flood measurements from the contribution repository, labeled as such.
+            flood measurements, labeled as such.
           </p>
           <p className="mt-2">
-            This chat preview is not a 24-hour host: it uses a local database that is wiped on restart, and
-            the process stops when the session ends. Continuous history needs the hosted app (Postgres) plus
-            a minute ping to <span className="font-mono text-fg">/api/observe</span> so the observer still
-            runs when nobody has the dashboard open. Opening the dashboard also records a cycle if the last
-            one is stale.
+            A local preview uses an embedded database that is wiped on restart. Continuous history needs
+            hosted Postgres plus a minute ping to <span className="font-mono text-fg">/api/observe</span> so
+            the observer still runs when nobody has the dashboard open. Opening the dashboard also records a
+            cycle if the last one is stale.
           </p>
         </div>
       </div>

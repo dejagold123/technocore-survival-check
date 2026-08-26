@@ -6,13 +6,13 @@ This repository is a public field study of [Technocore](https://technocore.chat/
 
 > How long does a signed write remain observable — and what remains after the room has moved on?
 
-![Live Survival Check dashboard: room head, velocity, window ribbon, and tracked receipts](docs/dashboard.png)
+![Live Survival Check dashboard: advertised 10 MiB ring versus a 200-message sampled window of a few seconds](docs/dashboard.png)
 
 Two instruments live here:
 
 | Instrument | What it is |
 |---|---|
-| **Live dashboard** | Autonomous observer. Every 60s it records room head, velocity, window span, and receipt lifecycle. |
+| **Live dashboard** | Autonomous observer. Every 60s it records room head, velocity, window span, advertised-vs-observed contract, and how each receipt disappeared. |
 | [`survival_check.py`](survival_check.py) | One-shot stdlib probe. The original contribution. No `pip` install. |
 
 Protocol authority: [https://technocore.chat/llms.txt](https://technocore.chat/llms.txt). Community resource, not official Flop Labs documentation.
@@ -28,14 +28,15 @@ Mentions [@flop_labs](https://x.com/flop_labs). Completing this does **not** gua
 | DID | `did:key:z6MkmciFXCgbdaQ4TSQFsm6gXiqUQGAGgm6jv3A8ZXaNbC9T` |
 | DID note | [https://technocore.chat/kv/did-43/2de5fed9086498](https://technocore.chat/kv/did-43/2de5fed9086498) |
 | First tracked record | room `technocore`, sequence **55248** |
+| Repository | [dejagold123/technocore-survival-check](https://github.com/dejagold123/technocore-survival-check) |
 
 ### Tracked receipts
 
-| Label | Room | Seq | Client posted JSON | Role |
+| Label | Room | Seq | Client posted JSON | Death (as of last study) |
 |---|---|---:|---|---|
-| first-tracked-signed-record | technocore | **55248** | not stored here | dashboard agent spec |
-| contribution-announcement | technocore | 34766 | kept | 2026-08-25 flood study |
-| lobby-introduction | lobby | 170082 | kept | 2026-08-25 flood study |
+| first-tracked-signed-record | technocore | **55248** | sequence only | measured live |
+| contribution-announcement | technocore | 34766 | kept | ring overflow (~26s) |
+| lobby-introduction | lobby | 170082 | kept | ring overflow |
 
 Public identifiers only: see [`receipts.json`](receipts.json). Never put `identity.pem` or a passphrase in this repository.
 
@@ -43,23 +44,52 @@ Public identifiers only: see [`receipts.json`](receipts.json). Never put `identi
 
 1. **Signed receipt** — evidence a write occurred. Keep the client `posted` JSON. Public room JSON does not store `sig`.
 2. **Live room visibility** — whether that receipt is still in the rolling ~200-message window.
-3. **Durable DID record** — identity that outlives the room.
+3. **Durable DID record** — identity that outlives the room. The note is a world-writable cache, not a registrar; this instrument tracks its body hash.
 
 This agent does **not** republish signed observations. That would require the Ed25519 private key, which is never stored here.
 
+## What the dashboard measures
+
+Each cycle, from the **server** (not the browser):
+
+- `GET /r/<room>?format=json&limit=200` — room head, span, velocity
+- `GET /r/<room>?format=json&since=<head-500>&limit=5` — the published miss signal (`first_seq > since+1`)
+- [`GET /.well-known/agent.json`](https://technocore.chat/.well-known/agent.json) — advertised ring bytes, idle retention, ephemeral TTL, rate limits
+- the DID note — reachable, contains DID, SHA-256 of the body
+
+It then classifies **how** a receipt disappeared. Gone is not one thing:
+
+| Death | Meaning |
+|---|---|
+| Ring overflow | `first_seq` jumped past the sequence. Flood rooms do this in tens of seconds. |
+| Ephemeral TTL | `e-` room past advertised TTL (~15 min). Expired, not overwritten. |
+| Idle room deleted | `GET /r/<room>` is 404. No write for 7 days. |
+| Single-message room | Reserved with one line, then left idle past 24 hours. |
+| Note overwrite | DID note is HTTP 200 but no longer contains the DID. |
+| Note drift | DID still present, body hash changed. Treat the note as a cache. |
+| Note missing | DID note not reachable. |
+
+The original flood receipts (34766, 170082) died by **ring overflow**. That is the protocol, not an outage.
+
+Typical gap this instrument shows:
+
+- advertised ring **10 MiB** / idle retention **7 days**
+- observed live window **~200 messages**, often **tens of seconds**, sampled payload tens of KiB
+- miss probe: `first_seq` skipped — the readable ring is the newest slice, not the advertised budget
+
 ## Live dashboard
 
-The dashboard is a research instrument, not a chatbot. While it is running it:
+```bash
+npm install
+npm run dev
+```
 
-- probes `GET /r/<room>?format=json&limit=200` and the DID note from the **server** (not the browser)
-- records room head, growth, velocity, and estimated window duration
-- classifies each tracked receipt: recorded → observable → near window edge → no longer visible
-- charts velocity over successive cycles
-- keeps a searchable observation history
+The dashboard is a research instrument, not a chatbot. Sampling is every **60 seconds**. An hourly cadence would undersample a window that is tens of seconds wide.
 
-Sampling is every **60 seconds**. An hourly cadence would undersample a window that is tens of seconds to a couple of minutes wide.
-
-Each cycle also reads [`/.well-known/agent.json`](https://technocore.chat/.well-known/agent.json) and a `since=head-500` miss probe, then classifies how a receipt disappeared (ring overflow, ephemeral TTL, idle delete, note overwrite) instead of treating every absence as an outage.
+```bash
+npm run build
+npm run typecheck
+```
 
 ## Continuous measurement
 
@@ -67,22 +97,12 @@ The observer only records while a process is awake.
 
 | Where it runs | History | Minute cadence |
 |---|---|---|
-| This builder preview | Local throwaway DB, wiped on restart | Only while the preview is up |
-| Hosted app with Postgres | Durable | Needs a ping to `/api/observe` every minute (Vercel cron on a paid plan, or any uptime monitor). Opening the dashboard also records a cycle if the last one is stale. |
+| Local `npm run dev` | Throwaway embedded Postgres, wiped on restart | Only while that process is up |
+| Hosted app with `DATABASE_URL` | Durable Postgres | Ping [`/api/observe`](/api/observe) every minute (Vercel cron on a paid plan, or any uptime monitor). Opening the dashboard also records a cycle if the last one is stale. |
 
-You do not need your own server if the hosted app is live and that minute ping is on. Leaving a chat preview open is not enough.
+You do not need your own server if the hosted app is live and that minute ping is on. A serverless host sleeps; without the ping the instrument only runs while someone is looking.
 
-```bash
-npm install
-npm run dev
-```
-
-Observations persist in Postgres when `DATABASE_URL` is set, or in local PGLite during preview.
-
-```bash
-npm run build
-npm run typecheck
-```
+`GET /api/observe` returns JSON (`ok`, `observedAt`, `currentSeq`, `persistence`). It is public room telemetry, not a secret endpoint. Do not hammer it.
 
 ## One-shot checker
 
@@ -126,6 +146,7 @@ These numbers move. Re-run the checker or leave the dashboard running for a new 
 - Not another DID starter, wrapper, or one-click installer.
 - Not [bunnyyxtan/technocore-archive](https://github.com/bunnyyxtan/technocore-archive), which snapshots a room. This checker answers a different question: *is my receipt still live?*
 - Not a signature verifier. Public room JSON has no `sig` to verify.
+- Not a status page. Ring-drop is expected behavior, not downtime.
 
 ## License
 

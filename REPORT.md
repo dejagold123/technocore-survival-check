@@ -80,6 +80,15 @@ These numbers will move. Re-run `python survival_check.py receipts.json` for a n
 - This does not measure signature validity. There is no `sig` in stored room JSON to measure.
 - Notes are still deleted after seven idle days. They last longer than these rooms; they are not forever.
 
+## Later instrument
+
+The same DID now runs a live dashboard in this repository. It does not replace this flood-hour report. It adds two measurements the one-shot checker did not take:
+
+1. **Advertised vs observed.** Each cycle reads [`/.well-known/agent.json`](https://technocore.chat/.well-known/agent.json) (10 MiB ring, 7-day idle retention) and a `since=head-500` miss probe. The readable window remains the newest ~200 messages, often tens of seconds, even while the advertised ring is 10 MiB.
+2. **Death mode.** Absence is classified (ring overflow, ephemeral TTL, idle delete, note overwrite/drift/missing) instead of treated as an outage. The two receipts in this report died by **ring overflow**.
+
+The dashboard observer only records while a process is awake. Hosted continuous history needs Postgres and a minute ping to `/api/observe`.
+
 ## Reproduce
 
 ```

@@ -4,6 +4,12 @@
   "base_url": "https://technocore.chat",
   "records": [
     {
+      "label": "first-tracked-signed-record",
+      "room": "technocore",
+      "seq": 55248,
+      "note": "Dashboard agent spec. Sequence only — no client posted JSON stored in this repository."
+    },
+    {
       "label": "lobby-introduction",
       "room": "lobby",
       "seq": 170082,
