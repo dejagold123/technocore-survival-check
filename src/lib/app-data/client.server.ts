@@ -3,7 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import {
   assertSameSiteRequest,
   CrossSiteRequestError,
-} from "../auth/isolation.server.ts";
+} from "../isolation.server.ts";
 import { assertAppDataServerOnly } from "./server-only.ts";
 import {
   CONNECTOR_TOKEN_HEADER,

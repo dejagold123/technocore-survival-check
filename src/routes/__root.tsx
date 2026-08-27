@@ -1,6 +1,5 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
-import { AuthProvider } from "@/lib/auth/provider";
-import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { QueryProvider } from "@/lib/query-provider";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Technocore Survival Check";
@@ -37,10 +36,9 @@ export const Route = createRootRoute({
         <HeadContent />
       </head>
       <body>
-        <PreviewHostBridge />
-        <AuthProvider>
+        <QueryProvider>
           <Outlet />
-        </AuthProvider>
+        </QueryProvider>
         <Scripts />
       </body>
     </html>

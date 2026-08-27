@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
  * App-wide client provider mounted once near the top of `<body>` via `__root.tsx`.
  * QueryClient lives here so the field-study dashboard can poll without a second tree.
  */
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function QueryProvider({ children }: { children: ReactNode }) {
   const [client] = useState(
     () =>
       new QueryClient({
