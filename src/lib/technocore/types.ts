@@ -145,4 +145,31 @@ export type DashboardPayload = {
   generatedAt: string;
   persistence: "neon" | "pglite";
   observePath: string;
+  events: AgentEventPublic[];
+  survival: SurvivalPublic[];
+  postingEnabled: boolean;
+};
+
+export type AgentEventPublic = {
+  id: number;
+  created_at: string;
+  event_type: string;
+  room: string;
+  subject: string;
+  title: string;
+  pointer_text: string;
+  posted: boolean;
+  posted_seq: number | null;
+  skip_reason: string | null;
+};
+
+export type SurvivalPublic = {
+  room: string;
+  asOf: string;
+  windowSpan: number | null;
+  velocityPerMinute: number | null;
+  survive60s: number | null;
+  survive5min: number | null;
+  trailingHour60s: number | null;
+  samples: number;
 };

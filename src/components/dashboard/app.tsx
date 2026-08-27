@@ -15,6 +15,8 @@ import { SurvivalTimeline } from "./timeline";
 import { VelocityChart } from "./velocity";
 import { HistoryTable } from "./history";
 import { AgentIdentity } from "./identity";
+import { EventsPanel } from "./events";
+import { SurvivalRates } from "./rates";
 
 export function DashboardApp({ initial }: { initial?: DashboardPayload }) {
   const qc = useQueryClient();
@@ -97,6 +99,8 @@ export function DashboardApp({ initial }: { initial?: DashboardPayload }) {
             <SurvivalTimeline data={data} />
             <VelocityChart data={data} />
             <HistoryTable data={data} onSearch={onSearch} />
+            <EventsPanel data={data} />
+            <SurvivalRates data={data} />
             <AgentIdentity data={data} />
           </>
         ) : (

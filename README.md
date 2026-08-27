@@ -24,7 +24,7 @@ Mentions [@flop_labs](https://x.com/flop_labs). Completing this does **not** gua
 | | |
 |---|---|
 | Name | Technocore Survival Check Agent |
-| Purpose | Autonomous observer of receipt survivability |
+| Purpose | Autonomous observer of receipt survivability; event-triggered pointers, not a timer |
 | DID | `did:key:z6MkmciFXCgbdaQ4TSQFsm6gXiqUQGAGgm6jv3A8ZXaNbC9T` |
 | DID note | [https://technocore.chat/kv/did-43/2de5fed9086498](https://technocore.chat/kv/did-43/2de5fed9086498) |
 | First tracked record | room `technocore`, sequence **55248** |
@@ -77,6 +77,32 @@ Typical gap this instrument shows:
 - observed live window **~200 messages**, often **tens of seconds**, sampled payload tens of KiB
 - miss probe: `first_seq` skipped — the readable ring is the newest slice, not the advertised budget
 
+## Active agent (event posts, not a timer)
+
+Most Technocore bots post “I’m here” on a schedule. This one does not. A cycle may post **only** when a stranger would learn something true about the room’s reliability:
+
+| Trigger | Fires when |
+|---|---|
+| `ring-overflow` | A tracked receipt was in the live window last cycle and `first_seq` just jumped past it |
+| `velocity-spike` | Messages/min ≥ `VELOCITY_SPIKE_MULTIPLIER` × trailing 10-cycle average (default 3×). Once per spike episode |
+| `ttl-expiry` | An `e-` room crosses advertised TTL |
+| `idle-deletion` | A watched room now 404s |
+| `note-drift` / `note-overwrite` | DID note hash changed (and it is not this agent’s own last write) or the DID disappeared |
+
+Each trigger is deduped (`room` + event + subject) so a lasting flood does not spam every 60s. Total posts are capped at `MAX_POSTS_PER_HOUR` (default **4**). If a draft would fail the stranger-value test, it is logged and not posted.
+
+Room lines are **pointers**, never the finding:
+
+```
+ring-overflow room=technocore seq=34766 → see https://<host>/api/events/12
+```
+
+Durable JSON: [`GET /api/events`](/api/events), [`GET /api/events/<id>`](/api/events/1). Room survival (turnover of the 200-message window, not this DID): [`GET /api/rooms/<room>/survival-rate`](/api/rooms/technocore/survival-rate).
+
+The DID note is a slow cache (about every 45 minutes, or after a trigger). It is written only when `PUBLIC_BASE_URL` (or Railway’s public domain) is set, so a local preview cannot overwrite the live note. Postgres stays the source of truth. Note drift is itself an event.
+
+Posting requires `TECHNOCORE_AGENT_KEY` (Ed25519, matching this DID). Without it the observer still records events and does not write rooms.
+
 ## Live dashboard
 
 ```bash
@@ -93,16 +119,32 @@ npm run typecheck
 
 ## Continuous measurement
 
-The observer only records while a process is awake.
+The 60s loop is in-process. On a persistent host it does not need an external cron.
 
-| Where it runs | History | Minute cadence |
+| Where it runs | History | Cadence |
 |---|---|---|
-| Local `npm run dev` | Throwaway embedded Postgres, wiped on restart | Only while that process is up |
-| Hosted app with `DATABASE_URL` | Durable Postgres | Ping [`/api/observe`](/api/observe) every minute (Vercel cron on a paid plan, or any uptime monitor). Opening the dashboard also records a cycle if the last one is stale. |
+| Local `npm run dev` | Throwaway embedded Postgres, wiped on restart | In-process 60s while that process is up |
+| Railway (or any always-on Node) + `DATABASE_URL` | Durable Postgres | In-process 60s. `/healthz` starts the loop and is the health check |
+| Serverless | Durable if Postgres is attached | Fallback ping `GET /api/observe` every minute |
 
-You do not need your own server if the hosted app is live and that minute ping is on. A serverless host sleeps; without the ping the instrument only runs while someone is looking.
+### Railway
 
-`GET /api/observe` returns JSON (`ok`, `observedAt`, `currentSeq`, `persistence`). It is public room telemetry, not a secret endpoint. Do not hammer it.
+1. Create a service from this repo. Add the **Postgres** plugin first; Railway injects `DATABASE_URL`.
+2. Set variables (never commit these):
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres (plugin) |
+| `TECHNOCORE_AGENT_KEY` | Ed25519 private key (PEM or raw). Must match `did:key:z6MkmciFXCgbdaQ4TSQFsm6gXiqUQGAGgm6jv3A8ZXaNbC9T` |
+| `TECHNOCORE_AGENT_KEY_PASSPHRASE` | Optional, if the PEM is encrypted |
+| `PUBLIC_BASE_URL` | Public origin of this service, used in pointer URLs |
+| `MAX_POSTS_PER_HOUR` | Default `4` |
+| `VELOCITY_SPIKE_MULTIPLIER` | Default `3` |
+
+3. Build: `npm run build:railway`. Start: `npm run start` (migrates, then the Node server). Health check: `/healthz` — that path also starts the 60s observer so the process does not wait for a browser visit.
+4. Do not use `npm run dev` in production.
+
+The private key never belongs in git, in `receipts.json`, or in a room message.
 
 ## One-shot checker
 

@@ -10,11 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as HealthzRouteImport } from './routes/healthz'
+import { Route as ApiEventsRouteImport } from './routes/api/events'
 import { Route as ApiObserveRouteImport } from './routes/api/observe'
+import { Route as ApiEventsIdRouteImport } from './routes/api/events.$id'
+import { Route as ApiRoomsRoomSurvivalRateRouteImport } from './routes/api/rooms.$room.survival-rate'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthzRoute = HealthzRouteImport.update({
+  id: '/healthz',
+  path: '/healthz',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiEventsRoute = ApiEventsRouteImport.update({
+  id: '/api/events',
+  path: '/api/events',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiObserveRoute = ApiObserveRouteImport.update({
@@ -22,31 +36,76 @@ const ApiObserveRoute = ApiObserveRouteImport.update({
   path: '/api/observe',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiEventsIdRoute = ApiEventsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiEventsRoute,
+} as any)
+const ApiRoomsRoomSurvivalRateRoute =
+  ApiRoomsRoomSurvivalRateRouteImport.update({
+    id: '/api/rooms/$room/survival-rate',
+    path: '/api/rooms/$room/survival-rate',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/healthz': typeof HealthzRoute
+  '/api/events': typeof ApiEventsRouteWithChildren
   '/api/observe': typeof ApiObserveRoute
+  '/api/events/$id': typeof ApiEventsIdRoute
+  '/api/rooms/$room/survival-rate': typeof ApiRoomsRoomSurvivalRateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/healthz': typeof HealthzRoute
+  '/api/events': typeof ApiEventsRouteWithChildren
   '/api/observe': typeof ApiObserveRoute
+  '/api/events/$id': typeof ApiEventsIdRoute
+  '/api/rooms/$room/survival-rate': typeof ApiRoomsRoomSurvivalRateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/healthz': typeof HealthzRoute
+  '/api/events': typeof ApiEventsRouteWithChildren
   '/api/observe': typeof ApiObserveRoute
+  '/api/events/$id': typeof ApiEventsIdRoute
+  '/api/rooms/$room/survival-rate': typeof ApiRoomsRoomSurvivalRateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/observe'
+  fullPaths:
+    | '/'
+    | '/healthz'
+    | '/api/events'
+    | '/api/observe'
+    | '/api/events/$id'
+    | '/api/rooms/$room/survival-rate'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/observe'
-  id: '__root__' | '/' | '/api/observe'
+  to:
+    | '/'
+    | '/healthz'
+    | '/api/events'
+    | '/api/observe'
+    | '/api/events/$id'
+    | '/api/rooms/$room/survival-rate'
+  id:
+    | '__root__'
+    | '/'
+    | '/healthz'
+    | '/api/events'
+    | '/api/observe'
+    | '/api/events/$id'
+    | '/api/rooms/$room/survival-rate'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  HealthzRoute: typeof HealthzRoute
+  ApiEventsRoute: typeof ApiEventsRouteWithChildren
   ApiObserveRoute: typeof ApiObserveRoute
+  ApiRoomsRoomSurvivalRateRoute: typeof ApiRoomsRoomSurvivalRateRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,6 +117,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/healthz': {
+      id: '/healthz'
+      path: '/healthz'
+      fullPath: '/healthz'
+      preLoaderRoute: typeof HealthzRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/events': {
+      id: '/api/events'
+      path: '/api/events'
+      fullPath: '/api/events'
+      preLoaderRoute: typeof ApiEventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/observe': {
       id: '/api/observe'
       path: '/api/observe'
@@ -65,12 +138,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiObserveRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/events/$id': {
+      id: '/api/events/$id'
+      path: '/$id'
+      fullPath: '/api/events/$id'
+      preLoaderRoute: typeof ApiEventsIdRouteImport
+      parentRoute: typeof ApiEventsRoute
+    }
+    '/api/rooms/$room/survival-rate': {
+      id: '/api/rooms/$room/survival-rate'
+      path: '/api/rooms/$room/survival-rate'
+      fullPath: '/api/rooms/$room/survival-rate'
+      preLoaderRoute: typeof ApiRoomsRoomSurvivalRateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface ApiEventsRouteChildren {
+  ApiEventsIdRoute: typeof ApiEventsIdRoute
+}
+
+const ApiEventsRouteChildren: ApiEventsRouteChildren = {
+  ApiEventsIdRoute: ApiEventsIdRoute,
+}
+
+const ApiEventsRouteWithChildren = ApiEventsRoute._addFileChildren(
+  ApiEventsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  HealthzRoute: HealthzRoute,
+  ApiEventsRoute: ApiEventsRouteWithChildren,
   ApiObserveRoute: ApiObserveRoute,
+  ApiRoomsRoomSurvivalRateRoute: ApiRoomsRoomSurvivalRateRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

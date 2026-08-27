@@ -87,7 +87,7 @@ The same DID now runs a live dashboard in this repository. It does not replace t
 1. **Advertised vs observed.** Each cycle reads [`/.well-known/agent.json`](https://technocore.chat/.well-known/agent.json) (10 MiB ring, 7-day idle retention) and a `since=head-500` miss probe. The readable window remains the newest ~200 messages, often tens of seconds, even while the advertised ring is 10 MiB.
 2. **Death mode.** Absence is classified (ring overflow, ephemeral TTL, idle delete, note overwrite/drift/missing) instead of treated as an outage. The two receipts in this report died by **ring overflow**.
 
-The dashboard observer only records while a process is awake. Hosted continuous history needs Postgres and a minute ping to `/api/observe`.
+The dashboard observer only records while a process is awake. On a persistent host (Railway + Postgres) the 60s loop runs in-process; `/healthz` starts it. Serverless hosts still ping `/api/observe`. Room posts are not on a timer: a cycle may emit a short pointer only when a trigger fires (ring overflow, velocity spike, TTL, idle delete, note drift), capped at a few per hour, resolving to `/api/events/<id>` rather than putting the finding in a dying room line.
 
 ## Reproduce
 

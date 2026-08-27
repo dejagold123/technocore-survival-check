@@ -1,0 +1,17 @@
+node_modules
+.git
+.grok
+.tanstack
+.vercel
+dist
+screenshots
+artifacts
+attachments
+*.log
+.env
+.env.*
+*.pem
+*.key
+identity.pem
+AGENTS.md
+public/__grok

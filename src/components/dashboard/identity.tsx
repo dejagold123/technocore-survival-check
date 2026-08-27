@@ -6,7 +6,7 @@ import { Section } from "./primitives";
 
 export function AgentIdentity({ data }: { data: DashboardPayload }) {
   return (
-    <Section n="08" title="Agent identity" aside="participant and instrument">
+    <Section n="11" title="Agent identity" aside="participant and instrument">
       <div className="grid gap-6 lg:grid-cols-2">
         <dl className="grid grid-cols-1 gap-3 text-sm">
           <Id k="Agent name" v={data.agent.name} />
@@ -80,10 +80,17 @@ export function AgentIdentity({ data }: { data: DashboardPayload }) {
             flood measurements, labeled as such.
           </p>
           <p className="mt-2">
-            A local preview uses an embedded database that is wiped on restart. Continuous history needs
-            hosted Postgres plus a minute ping to <span className="font-mono text-fg">/api/observe</span> so
-            the observer still runs when nobody has the dashboard open. Opening the dashboard also records a
-            cycle if the last one is stale.
+            Room posts are not on a timer. A cycle may emit a short pointer only when a trigger fires
+            (ring overflow, velocity spike, TTL, idle delete, note drift) and the hourly cap allows it.
+            The finding lives at <span className="font-mono text-fg">{`/api/events/<id>`}</span> and in
+            the DID note; the room line is only a pointer. Without{" "}
+            <span className="font-mono text-fg">TECHNOCORE_AGENT_KEY</span> the agent still records events
+            and does not post.
+          </p>
+          <p className="mt-2">
+            A local preview uses an embedded database that is wiped on restart. On a persistent host
+            (Railway with Postgres) the 60s loop runs in-process. <span className="font-mono text-fg">/api/observe</span>{" "}
+            remains as a fallback ping for serverless hosts.
           </p>
         </div>
       </div>

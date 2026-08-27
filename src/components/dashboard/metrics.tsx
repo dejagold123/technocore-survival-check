@@ -38,9 +38,13 @@ export function MetricStrip({ data }: { data: DashboardPayload }) {
         label="Agent status"
         value={agent.status}
         hint={
-          data.persistence === "neon"
-            ? "hosted Postgres"
-            : "preview DB · not 24/7"
+          data.postingEnabled
+            ? data.persistence === "neon"
+              ? "hosted · posting armed"
+              : "preview · posting armed"
+            : data.persistence === "neon"
+              ? "hosted · observe-only"
+              : "preview · observe-only"
         }
         tone={agent.status === "error" ? "gone" : agent.status === "observing" ? "live" : "warn"}
       />

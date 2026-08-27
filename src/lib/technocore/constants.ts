@@ -1,6 +1,6 @@
 export const AGENT = {
   name: "Technocore Survival Check Agent",
-  purpose: "Autonomous observer of receipt survivability",
+  purpose: "Autonomous observer of receipt survivability; event-triggered pointers, not a timer",
   did: "did:key:z6MkmciFXCgbdaQ4TSQFsm6gXiqUQGAGgm6jv3A8ZXaNbC9T",
   repo: "https://github.com/dejagold123/technocore-survival-check",
   protocol: "https://technocore.chat/llms.txt",
@@ -8,7 +8,7 @@ export const AGENT = {
   didNoteUrl: "https://technocore.chat/kv/did-43/2de5fed9086498",
   primaryRoom: "technocore",
   firstTracked: { room: "technocore", seq: 55248 },
-  userAgent: "technocore-survival-check-agent/1.0 (field-study)",
+  userAgent: "technocore-survival-check-agent/1.1 (field-study)",
 } as const;
 
 export const STALE_MS = 55_000;

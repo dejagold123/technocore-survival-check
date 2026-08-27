@@ -11,6 +11,8 @@ import {
   STALE_MS,
 } from "./constants";
 import { classifyNote, classifyReceiptDeath } from "./death";
+import { afterCycle, listEvents, survivalRateFor, type CycleRoom, type ReceiptTransition } from "./agent.server";
+import { agentConfig } from "./config";
 import type {
   DashboardPayload,
   DeathMode,
@@ -611,6 +613,21 @@ function ensureLoop(): void {
   }, OBSERVE_EVERY_MS);
 }
 
+/** Railway health checks (and first dashboard load) start the in-process 60s loop. */
+export function startObserver(): void {
+  const first = !loopStarted;
+  ensureLoop();
+  if (first) {
+    void loadDashboardState({ force: false }).catch((err) => {
+      console.error("[survival-observer]", err);
+    });
+  }
+}
+
+export function observerLoopStarted(): boolean {
+  return loopStarted;
+}
+
 export async function loadDashboardState(input?: {
   force?: boolean;
   q?: string;
@@ -689,11 +706,15 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
   const winSec = windowSeconds(span, winVel ?? intervalVel);
   const http429 = live?.http429 ?? false;
   const rateRemaining = live?.budgetRemaining ?? null;
+  const lastWrittenRows = await sql<{ value: string | null }>`
+    select value from agent_state where key = ${"last_note_sha"}
+  `.catch(() => [] as { value: string | null }[]);
+  const lastWrittenSha = lastWrittenRows[0]?.value ?? null;
   const noteMode = classifyNote({
     reachable: note.reachable,
     containsDid: note.contains_did,
     sha256: note.sha256,
-    previousSha256: previous?.did_note_sha256 ?? null,
+    previousSha256: lastWrittenSha ?? previous?.did_note_sha256 ?? null,
   });
 
   const recent = await sql<Record<string, unknown>>`
@@ -840,6 +861,73 @@ async function runCycle(sql: Sql, previous: ObservationRow | null): Promise<void
       where id = ${num(rec.id)}
     `;
   }
+
+  const cycleRooms: CycleRoom[] = [];
+  for (const [room, snapshot] of roomData) {
+    if ("error" in snapshot) {
+      cycleRooms.push({ room, error: snapshot.error });
+    } else {
+      cycleRooms.push({
+        room,
+        first_seq: snapshot.first_seq,
+        last_seq: snapshot.last_seq,
+        count: snapshot.count,
+        bytes: snapshot.bytes,
+        velocity: windowVelocity(snapshot),
+      });
+    }
+  }
+  const transitions: ReceiptTransition[] = [];
+  for (const rec of receipts) {
+    const room = String(rec.room);
+    const seq = num(rec.seq) ?? 0;
+    const snapshot = roomData.get(room);
+    const liveRoom = snapshot && !("error" in snapshot) ? snapshot : null;
+    const first = liveRoom?.first_seq ?? null;
+    const last = liveRoom?.last_seq ?? null;
+    const inWindow = first != null && last != null && seq >= first && seq <= last;
+    const missed = first != null && first > seq && !inWindow;
+    const status: VisibilityStatus =
+      liveRoom && first != null && last != null ? visibilityStatus(seq, first, last) : "gone";
+    transitions.push({
+      room,
+      seq,
+      previousStatus: String(rec.last_status ?? "recorded"),
+      status,
+      deathMode: classifyReceiptDeath({
+        status,
+        inWindow,
+        missedByRing: missed,
+        room,
+        roomHttpError: snapshot && "error" in snapshot ? snapshot.error : null,
+        postedAt: iso(rec.posted_at),
+        observedAt,
+        ephemeralTtlSeconds: contract.ephemeralTtlSeconds,
+      }).mode,
+      missedByRing: missed,
+      inWindow,
+    });
+  }
+  try {
+    await afterCycle({
+      sql,
+      observedAt,
+      observationId,
+      rooms: cycleRooms,
+      previous,
+      receipts: transitions,
+      note: {
+        reachable: note.reachable,
+        containsDid: note.contains_did,
+        sha256: note.sha256,
+        mode: noteMode,
+        body: note.preview,
+      },
+      primaryVelocity: winVel ?? intervalVel,
+    });
+  } catch (err) {
+    console.error("[survival-agent] afterCycle", err);
+  }
 }
 
 async function assemble(sql: Sql, q: string): Promise<DashboardPayload> {
@@ -957,6 +1045,10 @@ async function assemble(sql: Sql, q: string): Promise<DashboardPayload> {
 
   const nextDueAt = lastAt ? new Date(Date.parse(lastAt) + OBSERVE_EVERY_MS).toISOString() : null;
 
+  const events = await listEvents(sql, 24).catch(() => []);
+  const watched = [...new Set(receipts.map((r) => r.room))];
+  const survival = await Promise.all(watched.map((room) => survivalRateFor(sql, room).catch(() => null)));
+
   return {
     agent: {
       name: AGENT.name,
@@ -981,6 +1073,9 @@ async function assemble(sql: Sql, q: string): Promise<DashboardPayload> {
     generatedAt: new Date().toISOString(),
     persistence: dbSource,
     observePath: "/api/observe",
+    events,
+    survival: survival.filter((s): s is NonNullable<typeof s> => s != null),
+    postingEnabled: agentConfig().keyPresent,
   };
 }
 
