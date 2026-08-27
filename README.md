@@ -129,6 +129,8 @@ npm run dev
 
 The dashboard is a research instrument, not a chatbot. Sampling is every **60 seconds**. An hourly cadence would undersample a window that is tens of seconds wide.
 
+Hosted (observe-only until a posting key is set): [survival-check-production.up.railway.app](https://survival-check-production.up.railway.app)
+
 ```bash
 npm run build
 npm run typecheck
