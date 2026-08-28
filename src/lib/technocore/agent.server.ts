@@ -383,30 +383,77 @@ function noteBody(rates: SurvivalRate[], cfg = agentConfig()): string {
   return lines.join("\n").slice(0, 8000);
 }
 
+async function readCurrentNoteValue(): Promise<string | null> {
+  try {
+    const res = await fetch(AGENT.didNoteUrl, {
+      headers: { accept: "text/plain, application/json;q=0.8", "user-agent": AGENT.userAgent },
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    try {
+      const json = JSON.parse(text) as { value?: unknown };
+      if (typeof json.value === "string") return json.value;
+    } catch {
+      // Not JSON — the KV store returns the raw value as plain text.
+    }
+    return text;
+  } catch (err) {
+    console.error("[survival-agent] failed to re-read DID note after conflict", err);
+    return null;
+  }
+}
+
 async function writeDidNote(sql: Sql, body: string): Promise<{ status: number; sha: string }> {
   const sha = createHash("sha256").update(body, "utf8").digest("hex");
   const url = new URL(AGENT.didNoteUrl);
   const parts = url.pathname.split("/").filter(Boolean); // kv, did-43, key
   const ns = parts[1];
   const key = parts[2];
-  const prev = await getState(sql, "last_note_body");
-  const payload: Record<string, unknown> = { value: body };
-  if (prev) payload.if = prev;
-  const res = await fetch(`${AGENT.baseUrl}/kv/${encodeURIComponent(ns)}/${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "text/plain, application/json;q=0.8",
-      "user-agent": AGENT.userAgent,
-    },
-    body: JSON.stringify(payload),
-  });
-  const text = await res.text();
+
+  async function attempt(ifValue: string | null): Promise<{ res: Response; text: string }> {
+    const payload: Record<string, unknown> = { value: body };
+    if (ifValue) payload.if = ifValue;
+    const res = await fetch(`${AGENT.baseUrl}/kv/${encodeURIComponent(ns)}/${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "text/plain, application/json;q=0.8",
+        "user-agent": AGENT.userAgent,
+      },
+      body: JSON.stringify(payload),
+    });
+    return { res, text: await res.text() };
+  }
+
+  const cachedBase = await getState(sql, "last_note_body");
+  let { res, text } = await attempt(cachedBase);
   console.log("[survival-agent] DID note write", res.status, text.slice(0, 160));
+
+  if (res.status === 409) {
+    // Our cached base value is stale relative to the live note — read the
+    // actual current value the server holds and retry once with that as
+    // the base, instead of resending the same doomed `if` forever.
+    const current = await readCurrentNoteValue();
+    if (current != null && current !== cachedBase) {
+      await setState(sql, "last_note_body", current);
+      await setState(sql, "last_note_sha", createHash("sha256").update(current, "utf8").digest("hex"));
+      ({ res, text } = await attempt(current));
+      console.log("[survival-agent] DID note write retry", res.status, text.slice(0, 160));
+    }
+  }
+
   if (res.status >= 200 && res.status < 300) {
     await setState(sql, "last_note_body", body);
     await setState(sql, "last_note_sha", sha);
     await setState(sql, "last_note_at", new Date().toISOString());
+    await setState(sql, "note_write_failures", "0");
+  } else {
+    // Back off exponentially (capped at 30 min) instead of retrying every
+    // single ~60s poll cycle while the conflict persists.
+    const failures = (Number(await getState(sql, "note_write_failures")) || 0) + 1;
+    await setState(sql, "note_write_failures", String(failures));
+    const backoffMs = Math.min(30 * 60_000, 60_000 * 2 ** Math.min(failures, 5));
+    await setState(sql, "note_write_backoff_until", new Date(Date.now() + backoffMs).toISOString());
   }
   return { status: res.status, sha };
 }
@@ -415,6 +462,8 @@ export async function maybeRefreshNote(ctx: CycleContext, reasonCount: number): 
   const cfg = agentConfig();
   // Preview / missing public origin must not overwrite the world-writable DID note.
   if (!cfg.publicBase) return;
+  const backoffUntil = await getState(ctx.sql, "note_write_backoff_until");
+  if (backoffUntil && Date.now() < Date.parse(backoffUntil)) return;
   const last = await getState(ctx.sql, "last_note_at");
   const due =
     reasonCount > 0 ||
